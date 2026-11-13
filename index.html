@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rift Rumble 3D</title>
+<style>
+  *{box-sizing:border-box} html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101629;color:#fff;font-family:system-ui,Arial}
+  canvas{display:block} #hud{position:fixed;inset:0;pointer-events:none}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;padding:18px 22px;gap:14px}
+  .fighter{width:min(34vw,300px);background:#111a2dcc;border:1px solid #ffffff35;border-radius:14px;padding:10px 13px;backdrop-filter:blur(8px)}
+  .name{font-weight:900;letter-spacing:1px;font-size:14px}.damage{font-size:30px;font-weight:950;line-height:1.1}
+  .bar{height:8px;background:#34415a;border-radius:8px;overflow:hidden;margin-top:7px}.fill{height:100%;width:100%;background:linear-gradient(90deg,#38d7b2,#a5f36b);transition:width .15s}
+  #enemy .fill{background:linear-gradient(90deg,#ffb34e,#ff526e)}
+  #center{position:absolute;top:18px;left:50%;transform:translateX(-50%);text-align:center;text-shadow:0 3px 10px #000}
+  #center strong{font-size:20px;letter-spacing:3px} #center small{display:block;color:#c8d6ef}
+  #modeToggle{pointer-events:auto;margin-top:7px;border:1px solid #ffffff55;border-radius:8px;padding:6px 10px;background:#263b60;color:#fff;font-weight:850;font-size:11px;cursor:pointer}
+  #message{position:absolute;top:43%;left:50%;transform:translate(-50%,-50%);font-size:clamp(24px,5vw,54px);font-weight:1000;text-align:center;text-shadow:0 5px 20px #000;white-space:pre-line}
+  #help{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:#0c1425d9;border:1px solid #ffffff30;border-radius:12px;padding:9px 14px;text-align:center;font-size:12px;line-height:1.6;max-width:95vw}
+  kbd{background:#283750;border:1px solid #ffffff40;border-radius:5px;padding:2px 6px;font-weight:800}
+  #restart{pointer-events:auto;display:none;margin:10px auto 0;border:0;border-radius:9px;background:#f7c948;color:#172033;font-weight:900;padding:10px 18px;cursor:pointer}
+  #hint{position:absolute;right:18px;bottom:18px;color:#c4d0e6;font-size:11px;text-align:right}
+  #mobileControls{display:none;position:fixed;inset:auto 0 16px 0;padding:0 16px;justify-content:space-between;align-items:flex-end;pointer-events:none;z-index:5}
+  .controlCluster{display:flex;gap:9px;align-items:flex-end;pointer-events:auto}
+  .touchBtn{width:58px;height:58px;border-radius:18px;border:1px solid #ffffff66;background:#172943d9;color:white;font-weight:950;font-size:17px;box-shadow:0 5px 16px #0008;touch-action:none;user-select:none;-webkit-user-select:none}
+  .touchBtn:active,.touchBtn.pressed{background:#267e9b;transform:scale(.95)}
+  .touchBtn.action{width:54px;height:54px;border-radius:50%;background:#263b60ed}
+  .touchBtn.heavy{background:#87452fee}.touchBtn.jump{background:#286b65ee}
+  @media(max-width:700px),(pointer:coarse){
+    #mobileControls{display:flex}
+    #help{bottom:158px;font-size:10px;max-width:92vw}
+    #hint{display:none}
+    .fighter{width:37vw}.damage{font-size:23px}.top{padding:10px}
+  }
+</style>
+</head>
+<body>
+<div id="hud">
+  <div class="top">
+    <div class="fighter"><div class="name">YOU · RIFT KNIGHT</div><div class="damage" id="pdamage">0%</div><div class="bar"><div class="fill" id="pbar"></div></div></div>
+    <div id="center"><strong>RIFT RUMBLE</strong><small id="modeLabel">YOU VS CPU · FIRST TO 3 KOs</small><button id="modeToggle">WATCH CPU VS CPU</button></div>
+    <div class="fighter" id="enemy"><div class="name">CPU · VOLT WRAITH</div><div class="damage" id="edamage">0%</div><div class="bar"><div class="fill" id="ebar"></div></div></div>
+  </div>
+  <div id="message">FIGHT!</div>
+  <div id="help"><kbd>A</kbd>/<kbd>D</kbd> move &nbsp; <kbd>W</kbd> jump &nbsp; <kbd>J</kbd> light attack &nbsp; <kbd>K</kbd> heavy attack &nbsp; <kbd>L</kbd> dodge<br>Face your opponent to attack. Build damage, then launch them off the arena.</div>
+  <div id="hint">3D arena • Keyboard controls</div>
+  <div id="mobileControls">
+    <div class="controlCluster">
+      <button class="touchBtn" data-hold="a" aria-label="Move left">◀</button>
+      <button class="touchBtn" data-hold="d" aria-label="Move right">▶</button>
+    </div>
+    <div class="controlCluster">
+      <button class="touchBtn action" data-action="dodge" aria-label="Dodge">DODGE</button>
+      <button class="touchBtn action" data-action="light" aria-label="Light attack">J</button>
+      <button class="touchBtn action heavy" data-action="heavy" aria-label="Heavy attack">K</button>
+      <button class="touchBtn action jump" data-action="jump" aria-label="Jump">▲</button>
+    </div>
+  </div>
+</div>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x101629); scene.fog=new THREE.Fog(0x101629,18,42);
+const camera=new THREE.PerspectiveCamera(48,innerWidth/innerHeight,.1,100); camera.position.set(0,8.5,15); camera.lookAt(0,2,0);
+const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setSize(innerWidth,innerHeight); renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap; renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.2; document.body.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xa9c9ff,0x252039,2));
+const key=new THREE.DirectionalLight(0xffffff,3); key.position.set(-5,12,8); key.castShadow=true; key.shadow.mapSize.set(2048,2048); scene.add(key);
+const rim=new THREE.PointLight(0x4e8cff,35,24); rim.position.set(0,5,-7); scene.add(rim);
+const mat=(c,metal=0,rough=.45)=>new THREE.MeshStandardMaterial({color:c,metalness:metal,roughness:rough});
+const floorMat=mat(0x26344f,.35,.55), trimMat=mat(0x31c8d5,.6,.25);
+const platform=new THREE.Mesh(new THREE.BoxGeometry(13,.7,6),floorMat); platform.position.y=-.35; platform.receiveShadow=true; scene.add(platform);
+const trim=new THREE.Mesh(new THREE.BoxGeometry(13.15,.16,6.15),trimMat); trim.position.y=-.72; scene.add(trim);
+for(let x of [-6.3,6.3]){let rail=new THREE.Mesh(new THREE.BoxGeometry(.12,.12,6.1),mat(0x9cefff, .7));rail.position.set(x,.12,0);scene.add(rail)}
+for(let z of [-2.9,2.9]){let rail=new THREE.Mesh(new THREE.BoxGeometry(13,.12,.12),mat(0x9cefff,.7));rail.position.set(0,.12,z);scene.add(rail)}
+// floating energy pylons
+for(let i=0;i<8;i++){let a=i*Math.PI/4;let p=new THREE.Mesh(new THREE.OctahedronGeometry(.45),mat(i%2?0x3a8dff:0xffbd4a,.65,.2));p.position.set(Math.cos(a)*9,1.2+Math.sin(i*2)*.6,Math.sin(a)*6);scene.add(p)}
+const stars=new THREE.Group();for(let i=0;i<100;i++){let s=new THREE.Mesh(new THREE.SphereGeometry(.025,6,6),new THREE.MeshBasicMaterial({color:0x9fcaff}));s.position.set((Math.random()-.5)*38,Math.random()*18-1,-8-Math.random()*20);stars.add(s)}scene.add(stars);
+function makeFighter(primary,accent){
+ const root=new THREE.Group();scene.add(root);
+ const bodyMat=mat(primary,.35,.28), accentMat=mat(accent,.5,.25), dark=mat(0x18243a,.2,.4);
+ function ball(parent,r,m,pos,scale=[1,1,1]){let o=new THREE.Mesh(new THREE.SphereGeometry(r,18,14),m);o.position.set(...pos);o.scale.set(...scale);o.castShadow=true;parent.add(o);return o}
+ const torso=ball(root,.48,bodyMat,[0,1.45,0],[.82,1.15,.62]);
+ ball(root,.34,accentMat,[0,2.25,0],[1,1,.9]);
+ // visor
+ let visor=new THREE.Mesh(new THREE.BoxGeometry(.42,.12,.12),mat(0xd9f8ff,.5,.15));visor.position.set(0,2.28,.29);root.add(visor);
+ ball(root,.16,accentMat,[-.49,1.8,0],[.8,1.5,.8]);ball(root,.16,accentMat,[.49,1.8,0],[.8,1.5,.8]);
+ let arms=[];
+ for(let side of [-1,1]){let arm=new THREE.Group();arm.position.set(side*.48,1.85,0);root.add(arm);let upper=new THREE.Mesh(new THREE.CapsuleGeometry(.12,.45,4,8),bodyMat);upper.position.y=-.28;upper.rotation.z=side*.18;upper.castShadow=true;arm.add(upper);ball(arm,.16,accentMat,[0,-.57,.03]);arms.push(arm)}
+ for(let side of [-1,1]){let leg=new THREE.Mesh(new THREE.CapsuleGeometry(.15,.55,4,8),dark);leg.position.set(side*.2,.48,0);leg.castShadow=true;root.add(leg)}
+ const glow=new THREE.PointLight(primary,2,3);glow.position.y=1.7;root.add(glow);
+ return {root,arms,bodyMat,accentMat,glow};
+}
+const player=makeFighter(0x35c7d8,0xc8fbff), enemy=makeFighter(0xff6b45,0xffd27a);
+const state=(x,z)=>({x,z,y:0,vx:0,vy:0,vz:0,damage:0,kos:0,face:1,ground:true,attack:0,attackType:0,hit:false,dodge:0,stun:0,ai:0});
+let P=state(-3,0),E=state(3,0);
+let cpuBattle=false, matchOver=false;
+function resetMatch(){
+ P=state(-3,0);E=state(3,0);roundTimer=0;matchOver=false;
+ document.getElementById('message').textContent='';
+ document.getElementById('restart').style.display='none';
+ updateHUD();
+}
+document.getElementById('modeToggle').addEventListener('click',()=>{
+ cpuBattle=!cpuBattle;resetMatch();
+ document.getElementById('modeLabel').textContent=cpuBattle?'CPU 1 VS CPU 2 · FIRST TO 3 KOs':'YOU VS CPU · FIRST TO 3 KOs';
+ document.getElementById('modeToggle').textContent=cpuBattle?'PLAY AS RIFT KNIGHT':'WATCH CPU VS CPU';
+ document.getElementById('help').innerHTML=cpuBattle?'CPU 1 vs CPU 2 — both fighters are controlled by AI. Sit back and watch the battle!':'<kbd>A</kbd>/<kbd>D</kbd> move &nbsp; <kbd>W</kbd> jump &nbsp; <kbd>J</kbd> light attack &nbsp; <kbd>K</kbd> heavy attack &nbsp; <kbd>L</kbd> dodge<br>Face your opponent to attack. Build damage, then launch them off the arena.';
+});
+function place(model,s){model.root.position.set(s.x,s.y,s.z);model.root.rotation.y=s.face>0?0:Math.PI;model.root.rotation.z=Math.max(-.25,Math.min(.25,-s.vx*.04));}
+const keys={};let paused=false,roundTimer=0;
+addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=true;if([' ','arrowup','arrowdown','arrowleft','arrowright'].includes(e.key.toLowerCase()))e.preventDefault();if(e.repeat)return;
+ if(e.key.toLowerCase()==='w'&&P.ground&&roundTimer===0){P.vy=8.5;P.ground=false}
+ if(e.key.toLowerCase()==='j')attack(P,1);
+ if(e.key.toLowerCase()==='k')attack(P,2);
+ if(e.key.toLowerCase()==='l'&&P.dodge<=0){P.dodge=.22;P.vx=P.face*12}
+});
+addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+// Touch controls: hold the movement arrows; tap the action buttons.
+document.querySelectorAll('[data-hold]').forEach(btn=>{
+ const keyName=btn.dataset.hold;
+ const release=()=>{keys[keyName]=false;btn.classList.remove('pressed')};
+ btn.addEventListener('pointerdown',e=>{e.preventDefault();keys[keyName]=true;btn.classList.add('pressed');btn.setPointerCapture(e.pointerId)});
+ btn.addEventListener('pointerup',release);btn.addEventListener('pointercancel',release);btn.addEventListener('lostpointercapture',release);
+});
+document.querySelectorAll('[data-action]').forEach(btn=>{
+ const action=btn.dataset.action;
+ btn.addEventListener('pointerdown',e=>{
+  e.preventDefault();btn.classList.add('pressed');
+  if(action==='jump'&&P.ground&&roundTimer===0){P.vy=8.5;P.ground=false}
+  if(action==='light')attack(P,1);
+  if(action==='heavy')attack(P,2);
+  if(action==='dodge'&&P.dodge<=0&&roundTimer===0){P.dodge=.22;P.vx=P.face*12}
+ });
+ const release=()=>btn.classList.remove('pressed');
+ btn.addEventListener('pointerup',release);btn.addEventListener('pointercancel',release);
+});
+function attack(s,type){if(s.attack>0||s.stun>0||roundTimer>0)return;s.attack=type===1?.27:.48;s.attackType=type;s.hit=false}
+function hit(attacker,defender,type){let power=type===1?5.5:9,base=type===1?5:8;defender.damage+=power;let force=base+defender.damage*.105;defender.vx=attacker.face*force;defender.vy=type===1?3.6+defender.damage*.018:5+defender.damage*.025;defender.stun=.22;defender.ground=false}
+function respawn(s,side){s.x=side*3;s.y=0;s.z=0;s.vx=0;s.vy=0;s.vz=0;s.damage=0;s.stun=.8;s.attack=0;s.dodge=0}
+function updateFighter(s,model,dt,isPlayer,opponent){
+ if(s.stun>0)s.stun-=dt;
+ if(s.attack>0){s.attack-=dt;if(!s.hit&&s.attack<(s.attackType===1?.17:.3)){let other=isPlayer?E:P,dist=Math.abs(s.x-other.x),dy=Math.abs(s.y-other.y);if(dist<1.55&&dy<1.8&&s.face===(other.x>s.x?1:-1)){hit(s,other,s.attackType);s.hit=true}}}
+ if(isPlayer){
+  if(s.stun<=0&&s.dodge<=0){let move=(keys.a?-1:0)+(keys.d?1:0);if(move)s.face=move;s.vx=THREE.MathUtils.damp(s.vx,move*6,12,dt);if(!move)s.vx=THREE.MathUtils.damp(s.vx,0,9,dt)}
+  if(s.dodge>0)s.dodge-=dt;
+ } else {
+  let dx=opponent.x-s.x,dist=Math.abs(dx);s.face=Math.sign(dx)||s.face;s.ai-=dt;
+  if(s.stun<=0&&s.dodge<=0){let move=dist>1.5?Math.sign(dx):0;s.vx=THREE.MathUtils.damp(s.vx,move*(dist>3?4.4:1.2),5,dt);if(s.ground&&s.ai<=0){if(dist<2.2&&Math.random()<.7)attack(s,Math.random()<.6?1:2);else if(dist>3&&Math.random()<.22){s.vy=8;s.ground=false}s.ai=.55+Math.random()*.45}}
+ }
+ s.vy-=20*dt;s.x+=s.vx*dt;s.y+=s.vy*dt;s.z+=s.vz*dt;
+ if(s.y<=0&&s.x>-6.1&&s.x<6.1){s.y=0;s.vy=0;s.ground=true}else s.ground=false;
+ if(s.x<-6.7||s.x>6.7||s.y< -5){s.kos++;respawn(s,isPlayer?-1:1);if(s.kos>=3&&!matchOver){matchOver=true;roundTimer=2;document.getElementById('message').textContent=cpuBattle?(isPlayer?'CPU 2 WINS!':'CPU 1 WINS!'):(isPlayer?'CPU WINS!':'YOU WIN!');document.getElementById('restart').style.display='block'}}
+ s.x=THREE.MathUtils.clamp(s.x,-10,10);s.z=THREE.MathUtils.clamp(s.z,-2,2);
+ place(model,s);
+ model.arms.forEach((a,i)=>{let side=i===0?-1:1;a.rotation.z=s.attack>0?(s.attackType===2?side*.9:-side*.75):s.stun>0?side*.4:0});
+ model.glow.intensity=s.attack>0?7:2;
+}
+function updateHUD(){document.getElementById('pdamage').textContent=P.damage+'%';document.getElementById('edamage').textContent=E.damage+'%';document.getElementById('pbar').style.width=Math.max(0,100-P.damage*.45)+'%';document.getElementById('ebar').style.width=Math.max(0,100-E.damage*.45)+'%'}
+let last=performance.now();
+function loop(now){let dt=Math.min((now-last)/1000,.033);last=now;
+ if(roundTimer>0){roundTimer-=dt;if(roundTimer<=0&&!matchOver&&P.kos<3&&E.kos<3){P.kos=0;E.kos=0;respawn(P,-1);respawn(E,1);document.getElementById('message').textContent='FIGHT!';setTimeout(()=>{if(roundTimer<=0)document.getElementById('message').textContent=''},900)}}
+ if(!matchOver){updateFighter(P,player,dt,!cpuBattle,E);updateFighter(E,enemy,dt,false,P)}updateHUD();
+ camera.position.x=THREE.MathUtils.damp(camera.position.x,(P.x+E.x)*.18,2,dt);camera.lookAt(camera.position.x*.25,1.6,0);
+ stars.rotation.y+=dt*.008;renderer.render(scene,camera);requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+document.getElementById('message').textContent='';
+const btn=document.createElement('button');btn.id='restart';btn.textContent='PLAY AGAIN';document.getElementById('message').appendChild(btn);
+btn.onclick=()=>{resetMatch();document.getElementById('message').appendChild(btn);};
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+</script>
+</body></html>
